@@ -1,0 +1,15 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".output/public",
+  "functions": {
+    "api/**": {
+      "maxDuration": 55
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!_build|favicon.ico).*)",
+      "destination": "/.output/server/index.mjs"
+    }
+  ]
+}
