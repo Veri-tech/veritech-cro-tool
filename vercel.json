@@ -1,0 +1,13 @@
+﻿{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": null,
+  "outputDirectory": "dist/client",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/dist/server/server.js"
+    }
+  ]
+}
