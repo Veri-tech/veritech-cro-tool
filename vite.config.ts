@@ -6,15 +6,10 @@ export default defineConfig({
     plugins: [
       nitro({
         preset: "vercel",
-        runtimeConfig: {
-          supabaseServiceRoleKey: "",
-          supabaseEncryptionKey: "",
-          anthropicApiKey: "",
-          appUrl: "",
-          googleClientId: "",
-          googleClientSecret: "",
-          semrushClientId: "",
-          semrushClientSecret: "",
+        vercel: {
+          config: {
+            runtime: "nodejs24.x",
+          },
         },
       }),
     ],
