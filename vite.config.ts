@@ -14,11 +14,18 @@ export default defineConfig({
         entry: 'src/server.ts',
       },
     }),
-    nitro(),
+    nitro({
+      preset: 'vercel',
+      vercel: {
+        functions: {
+          runtime: 'nodejs24.x',
+          maxDuration: 55,
+        },
+      },
+    }),
     react(),
   ],
   define: {
-    // Block server-only secrets from client bundle
     'process.env.SUPABASE_SERVICE_ROLE_KEY': 'undefined',
     'process.env.ANTHROPIC_API_KEY': 'undefined',
     'process.env.SUPABASE_ENCRYPTION_KEY': 'undefined',
