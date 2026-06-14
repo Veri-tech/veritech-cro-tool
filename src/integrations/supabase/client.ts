@@ -1,41 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function createSupabaseClient() {
-  // Client-side: only read VITE_ prefixed vars (Vite injects these at build time)
-  // Server-side: read from process.env directly
-  const isServer = typeof window === 'undefined';
+// These are the PUBLIC Supabase credentials - safe to include in client code.
+// The anon/publishable key is designed to be public and is protected by RLS policies.
+// NEVER put the service_role key here.
+const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_RGDsMtvVbpbp1uPAlKNHlw_s2uXdY0q';
 
-  const SUPABASE_URL = isServer
-    ? process.env.SUPABASE_URL
-    : (import.meta.env.VITE_SUPABASE_URL as string | undefined);
-
-  const SUPABASE_PUBLISHABLE_KEY = isServer
-    ? process.env.SUPABASE_PUBLISHABLE_KEY
-    : (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined);
-
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
-    ];
-    throw new Error(`Missing Supabase variable(s): ${missing.join(', ')}.`);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    storage: typeof window !== 'undefined' ? localStorage : undefined,
+    persistSession: true,
+    autoRefreshToken: true,
   }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
-      persistSession: true,
-      autoRefreshToken: true,
-    }
-  });
-}
-
-let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
-
-export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
-  get(_, prop, receiver) {
-    if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase, prop, receiver);
-  },
 });
