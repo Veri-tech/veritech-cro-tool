@@ -1,21 +1,18 @@
-// Server-side only - uses service role key that bypasses RLS.
-// NEVER import this at the top level of route files or client components.
-// Always use dynamic import inside server functions:
-//   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 function createSupabaseAdminClient() {
-  // Only read from process.env - never from import.meta.env
-  // This ensures this key is never bundled into client-side code
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Nitro on Vercel exposes env vars via process.env at runtime
+  // We hardcode the URL since it's not secret, and read the service role key from env
+  const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
+  
+  const SUPABASE_SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env['SUPABASE_SERVICE_ROLE_KEY'];
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
-      `[Supabase Admin] Missing server environment variables. ` +
-      `Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in your deployment environment.`
+      `[Supabase Admin] Missing SUPABASE_SERVICE_ROLE_KEY environment variable.`
     );
   }
 
