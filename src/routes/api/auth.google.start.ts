@@ -27,7 +27,7 @@ export const Route = createFileRoute("/api/auth/google/start")({
         const userId = await verifyToken(token);
         if (!userId) return new Response("Unauthorized", { status: 401 });
 
-        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientId = (process.env.GOOGLE_CLIENT_ID || '973934436364-tbnk2an8cb1bptr9atgupo1bqpuhu564.apps.googleusercontent.com');
         const appUrl = process.env.APP_URL;
         if (!clientId || !appUrl) {
           return new Response(

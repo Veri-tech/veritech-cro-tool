@@ -38,8 +38,8 @@ export const Route = createFileRoute("/api/auth/google/callback")({
           );
         }
 
-        const clientId = process.env.GOOGLE_CLIENT_ID;
-        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const clientId = (process.env.GOOGLE_CLIENT_ID || '973934436364-tbnk2an8cb1bptr9atgupo1bqpuhu564.apps.googleusercontent.com');
+        const clientSecret = (process.env.GOOGLE_CLIENT_SECRET || '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');
         if (!clientId || !clientSecret) {
           return new Response("Google OAuth not configured.", { status: 500 });
         }

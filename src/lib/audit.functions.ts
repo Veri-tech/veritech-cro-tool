@@ -51,8 +51,8 @@ async function refreshGoogleTokenIfNeeded(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID ?? "",
-        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+        client_id: (process.env.GOOGLE_CLIENT_ID || '973934436364-tbnk2an8cb1bptr9atgupo1bqpuhu564.apps.googleusercontent.com') ?? "",
+        client_secret: (process.env.GOOGLE_CLIENT_SECRET || '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') ?? "",
         refresh_token: refreshToken,
         grant_type: "refresh_token",
       }),
