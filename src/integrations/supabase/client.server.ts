@@ -1,24 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+// Server-only Supabase admin client.
+// This file is never shipped to the browser.
+const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmeXJ4dWxyd2FydHh3cHhmeWxqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTI3MjUzNywiZXhwIjoyMDk2ODQ4NTM3fQ.SqASgkbVCvdNeRpopxJeosJoO6Fb0jk5PZIcHSWyQLU';
+
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
-  
-  // Try all possible sources - edge runtime, node runtime, build-time inject
-  const SUPABASE_SERVICE_ROLE_KEY = 
-    // Build-time injected via Vite define (works in edge runtime too)
-    (typeof __SUPABASE_SERVICE_ROLE_KEY__ !== 'undefined' && __SUPABASE_SERVICE_ROLE_KEY__) ||
-    // Standard Node.js process.env (works in nodejs runtime)
-    (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) ||
-    // Vercel edge runtime env
-    (typeof globalThis !== 'undefined' && (globalThis as any).env?.SUPABASE_SERVICE_ROLE_KEY) ||
-    null;
-
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('[Supabase Admin] SUPABASE_SERVICE_ROLE_KEY not available.');
-  }
-
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY as string, {
+  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
       storage: undefined,
       persistSession: false,
