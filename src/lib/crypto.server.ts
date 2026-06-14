@@ -25,7 +25,7 @@ function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-export async function encryptToken(plaintext: string): Promise<string> {
+async function encrypt(plaintext: string): Promise<string> {
   const keyHex = getEncryptionKey();
   const keyBytes = hexToBytes(keyHex.slice(0, 64));
   const cryptoKey = await crypto.subtle.importKey(
@@ -40,7 +40,7 @@ export async function encryptToken(plaintext: string): Promise<string> {
   return btoa(String.fromCharCode(...combined));
 }
 
-export async function decryptToken(encrypted: string): Promise<string> {
+async function decrypt(encrypted: string): Promise<string> {
   const keyHex = getEncryptionKey();
   const keyBytes = hexToBytes(keyHex.slice(0, 64));
   const cryptoKey = await crypto.subtle.importKey(
@@ -52,3 +52,26 @@ export async function decryptToken(encrypted: string): Promise<string> {
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
   return new TextDecoder().decode(plaintext);
 }
+
+// String encryption/decryption
+export async function encryptString(plaintext: string): Promise<string> {
+  return encrypt(plaintext);
+}
+
+export async function decryptString(encrypted: string): Promise<string> {
+  return decrypt(encrypted);
+}
+
+// JSON encryption/decryption
+export async function encryptJSON(data: unknown): Promise<string> {
+  return encrypt(JSON.stringify(data));
+}
+
+export async function decryptJSON<T = unknown>(encrypted: string): Promise<T> {
+  const plaintext = await decrypt(encrypted);
+  return JSON.parse(plaintext) as T;
+}
+
+// Legacy aliases (keep for backward compatibility)
+export const encryptToken = encryptString;
+export const decryptToken = decryptString;
