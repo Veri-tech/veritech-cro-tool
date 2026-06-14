@@ -8,17 +8,18 @@ dist/
 .output/
 .vercel/
 
-# Environment files
+# Environment files - NEVER commit these
 .env
 .env.local
 .env.*.local
+dev-server/.env
+dev-server/.env.local
 
 # Generated files
 tsconfig.tsbuildinfo
-routeTree.gen.ts
 src/routeTree.gen.ts
 
-# Lovable-specific (not needed for Vercel deployment)
+# Lovable-specific
 .lovable/
 .workspace/
 
@@ -37,3 +38,6 @@ Thumbs.db
 
 # TanStack
 .tanstack/
+
+# Nitro cache
+node_modules/.nitro/
