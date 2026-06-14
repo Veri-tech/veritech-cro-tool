@@ -1,7 +1,8 @@
 // Server-only: market-share analysis engine.
 // Runs sequentially (no Promise.all) with a 44s elapsed-time budget so
 // partial progress survives Worker timeouts. Each step writes immediately.
-import { decryptJSON } from "./crypto.server";
+import { decryptJSON, decryptString } from "./crypto.server";
+import { logEvent } from "./event-log.server";
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 const PRICE_INPUT_PER_M = 3;
@@ -215,7 +216,7 @@ export async function fetchCompetitorTraffic(
 ): Promise<{ traffic: number | null; data_source: "semrush" | "dataforseo" | "ai_estimate" }> {
   const { data: rows } = await supabaseAdmin
     .from("client_integrations")
-    .select("provider, manual_credentials, status, semrush_has_traffic_api")
+    .select("provider, manual_credentials, access_token, status, semrush_has_traffic_api, auth_method")
     .eq("client_id", clientId)
     .in("provider", ["semrush", "dataforseo"])
     .eq("status", "active");
@@ -223,21 +224,32 @@ export async function fetchCompetitorTraffic(
   const sem = rows?.find((r: any) => r.provider === "semrush");
   const dfs = rows?.find((r: any) => r.provider === "dataforseo");
 
-  // 1. Semrush
-  if (sem?.manual_credentials) {
+  // 1. Semrush — support both OAuth (access_token) and manual (apiKey)
+  if (sem && sem.semrush_has_traffic_api) {
     try {
-      const creds = decryptJSON<any>(sem.manual_credentials);
-      const url = `https://api.semrush.com/?type=domain_ranks&key=${encodeURIComponent(creds.apiKey)}&export_columns=Ot&domain=${encodeURIComponent(competitorDomain)}&database=us`;
-      const r = await fetch(url);
-      const txt = await r.text();
-      if (r.ok && !txt.toLowerCase().includes("error")) {
-        const lines = txt.trim().split("\n");
-        const n = lines[1] ? Number(lines[1].split(";")[0]) : NaN;
-        if (Number.isFinite(n) && n > 0) {
-          return { traffic: Math.round(n), data_source: "semrush" };
+      let semrushKey: string | null = null;
+
+      if (sem.auth_method === "oauth" && sem.access_token) {
+        // OAuth: access_token IS the API key for Semrush REST API
+        semrushKey = decryptString(sem.access_token);
+      } else if (sem.auth_method === "manual" && sem.manual_credentials) {
+        const creds = decryptJSON<any>(sem.manual_credentials);
+        semrushKey = creds.apiKey ?? null;
+      }
+
+      if (semrushKey) {
+        const url = `https://api.semrush.com/?type=domain_ranks&key=${encodeURIComponent(semrushKey)}&export_columns=Ot&domain=${encodeURIComponent(competitorDomain)}&database=us`;
+        const r = await fetch(url);
+        const txt = await r.text();
+        if (r.ok && !txt.toLowerCase().includes("error")) {
+          const lines = txt.trim().split("\n");
+          const n = lines[1] ? Number(lines[1].split(";")[0]) : NaN;
+          if (Number.isFinite(n) && n > 0) {
+            return { traffic: Math.round(n), data_source: "semrush" };
+          }
         }
       }
-    } catch { /* fall through */ }
+    } catch { /* fall through to DataForSEO */ }
   }
 
   // 2. DataForSEO
@@ -654,6 +666,12 @@ export async function executeMarketShareJob(args: {
       current_step_label: "Analysis complete",
     });
 
+    void logEvent({
+      eventType: "market_share_completed",
+      agencyId: args.agencyId,
+      clientId: args.clientId,
+      detail: `competitors=${competitorResults.length}`,
+    });
     await notify({
       type: "market_share_complete",
       title: `Market Share Analysis ready for ${args.clientName}`,

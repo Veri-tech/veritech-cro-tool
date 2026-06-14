@@ -3,6 +3,7 @@
 // both a `google` and a `gsc` row in client_integrations.
 import { createFileRoute } from "@tanstack/react-router";
 import { getCookie, deleteCookie } from "@tanstack/react-start/server";
+import { logEvent } from "@/lib/event-log.server";
 
 type TokenResponse = {
   access_token: string;
@@ -152,6 +153,12 @@ export const Route = createFileRoute("/api/auth/google/callback")({
         deleteCookie("google_oauth_state");
         deleteCookie("google_oauth_uid");
 
+        void logEvent({
+          eventType: "oauth_connected",
+          userId,
+          clientId: clientRow.id,
+          detail: "provider=google email=" + email,
+        });
         return back("?success=google");
       },
     },

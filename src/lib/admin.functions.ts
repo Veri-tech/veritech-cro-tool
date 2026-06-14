@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { logEvent } from "@/lib/event-log.server";
 
 async function requireSuperAdmin(supabase: any, userId: string) {
   const { data } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
@@ -127,6 +128,12 @@ export const setAgencyStatus = createServerFn({ method: "POST" })
     }
     const { error } = await supabaseAdmin.from("agencies").update(patch).eq("id", data.agencyId);
     if (error) throw new Error(error.message);
+    void logEvent({
+      eventType: data.status === "suspended" ? "agency_suspended" : "agency_unsuspended",
+      agencyId: data.agencyId,
+      userId,
+      detail: data.status === "suspended" ? (data.reason ?? "No reason given") : undefined,
+    });
     return { ok: true };
   });
 
@@ -231,7 +238,7 @@ export const getSystemLogs = createServerFn({ method: "GET" })
     await requireSuperAdmin(supabase, userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [recentAudits, failedAudits, queue] = await Promise.all([
+    const [recentAudits, failedAudits, queue, eventLogs] = await Promise.all([
       supabaseAdmin
         .from("audits")
         .select("id, page_url, status, score, retry_count, error_message, created_at, agency_id, agencies(name), clients(name)")
@@ -248,12 +255,21 @@ export const getSystemLogs = createServerFn({ method: "GET" })
         .select("id, status, started_at, completed_at, audit_id, agency_id, agencies(name)")
         .order("started_at", { ascending: false })
         .limit(25),
+      // Event log — may not exist yet on older deployments; degrade gracefully
+      supabaseAdmin
+        .from("audit_event_logs")
+        .select("id, event_type, detail, created_at, agency_id, client_id, agencies(name), clients(name)")
+        .order("created_at", { ascending: false })
+        .limit(100)
+        .then((r) => ({ data: r.data ?? [] }))
+        .catch(() => ({ data: [] })),
     ]);
 
     return {
       recentAudits: recentAudits.data ?? [],
       failedAudits: failedAudits.data ?? [],
       queue: queue.data ?? [],
+      eventLogs: eventLogs.data ?? [],
     };
   });
 

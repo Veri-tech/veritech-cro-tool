@@ -9,6 +9,7 @@ import {
   emailInvitation,
   emailPasswordReset,
 } from "@/lib/email.server";
+import { logEvent } from "@/lib/event-log.server";
 
 // Send welcome email to the agency admin who just signed up.
 export const sendWelcomeEmail = createServerFn({ method: "POST" })
@@ -44,6 +45,13 @@ export const notifyInviteAccepted = createServerFn({ method: "POST" })
     await emailAllAgencyAdmins(client.agency_id, (to) =>
       emailInviteAccepted({ to, clientName: client.name }),
     );
+    void logEvent({
+      eventType: "invitation_accepted",
+      agencyId: client.agency_id,
+      userId: context.userId,
+      clientId: client.id,
+      detail: `client=${client.name}`,
+    });
     // Insert a notification.
     const { insertNotificationsForAgencyAdmins } = await import("@/lib/notifications.server");
     await insertNotificationsForAgencyAdmins(client.agency_id, {
@@ -103,6 +111,13 @@ export const createClientInvitation = createServerFn({ method: "POST" })
       to: data.email,
       agencyName: agency?.name ?? "Your agency",
       token,
+    });
+    void logEvent({
+      eventType: "invitation_sent",
+      agencyId,
+      userId,
+      clientId: client.id,
+      detail: `to=${data.email}`,
     });
     return { ok: true };
   });

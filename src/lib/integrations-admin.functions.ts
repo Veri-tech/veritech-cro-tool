@@ -3,6 +3,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { logEvent } from "@/lib/event-log.server";
 
 type Provider = "google" | "gsc" | "semrush" | "dataforseo";
 const ProviderEnum = z.enum(["google", "gsc", "semrush", "dataforseo"]);
@@ -248,5 +249,11 @@ export const adminDisconnectIntegration = createServerFn({ method: "POST" })
       .eq("client_id", data.clientId)
       .eq("provider", data.provider);
     if (error) throw new Error(error.message);
+    void logEvent({
+      eventType: "oauth_revoked",
+      agencyId: profile.agency_id,
+      clientId: data.clientId,
+      detail: `provider=${data.provider}`,
+    });
     return { ok: true };
   });

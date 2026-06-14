@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { AlertTriangle, Clock, CheckCircle } from "lucide-react";
+import { AlertTriangle, Clock, CheckCircle, Activity, Download } from "lucide-react";
 import { getSystemLogs } from "@/lib/admin.functions";
 import { Skeleton } from "@/components/Skeleton";
 
@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app/admin/logs")({
   component: AdminLogs,
 });
 
-type Tab = "recent" | "failed" | "queue";
+type Tab = "recent" | "failed" | "queue" | "events";
 
 function AdminLogs() {
   const fn = useServerFn(getSystemLogs);
@@ -29,7 +29,30 @@ function AdminLogs() {
     { id: "recent", label: "Recent audits", count: data.recentAudits.length, icon: CheckCircle },
     { id: "failed", label: "Failed", count: data.failedAudits.length, icon: AlertTriangle },
     { id: "queue", label: "Queue", count: data.queue.length, icon: Clock },
+    { id: "events", label: "Event log", count: (data.eventLogs ?? []).length, icon: Activity },
   ];
+
+  function exportCsv() {
+    const rows = data.eventLogs ?? [];
+    const header = "timestamp,event_type,agency,client,detail";
+    const lines = rows.map((e: any) =>
+      [
+        new Date(e.created_at).toISOString(),
+        e.event_type,
+        e.agencies?.name ?? "",
+        e.clients?.name ?? "",
+        (e.detail ?? "").replace(/,/g, ";"),
+      ].join(",")
+    );
+    const csv = [header, ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `veritech-event-log-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -122,6 +145,58 @@ function AdminLogs() {
             );
           })}
           {data.queue.length === 0 && <div className="px-4 py-8 text-center text-sm text-[color:var(--muted)]">Queue is empty.</div>}
+        </div>
+      )}
+      {tab === "events" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-[color:var(--muted)]">
+              OAuth connections, invitation events, audit lifecycle.
+              Populates as events occur.
+            </p>
+            <button
+              onClick={exportCsv}
+              className="vt-btn-secondary inline-flex items-center gap-2 text-xs"
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </button>
+          </div>
+          <div className="vt-card divide-y divide-[color:var(--border)]">
+            {(data.eventLogs ?? []).length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-[color:var(--muted)]">
+                No events logged yet. Events appear here as audits run, clients connect integrations, and invitations are sent.
+              </div>
+            )}
+            {(data.eventLogs ?? []).map((e: any) => (
+              <div key={e.id} className="px-4 py-3 flex flex-wrap items-start justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="rounded-md bg-[color:var(--slate)] px-2 py-0.5 text-xs font-mono">
+                      {e.event_type}
+                    </span>
+                    {e.agencies?.name && (
+                      <span className="text-xs text-[color:var(--muted)]">
+                        {e.agencies.name}
+                      </span>
+                    )}
+                    {e.clients?.name && (
+                      <span className="text-xs text-[color:var(--accent)]">
+                        · {e.clients.name}
+                      </span>
+                    )}
+                  </div>
+                  {e.detail && (
+                    <div className="text-xs text-[color:var(--muted)] mt-1 font-mono truncate max-w-[400px]">
+                      {e.detail}
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-[color:var(--muted)] whitespace-nowrap">
+                  {new Date(e.created_at).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

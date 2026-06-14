@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { buildAuditPrompt } from "./claude";
+import { logEvent } from "./event-log.server";
 import { parseAuditOutput } from "./parse";
 import { validateAuditUrl } from "./validate";
 
@@ -312,6 +313,15 @@ export const runAudit = createServerFn({ method: "POST" })
         (result.tokens_input / 1_000_000) * PRICE_INPUT_PER_M +
         (result.tokens_output / 1_000_000) * PRICE_OUTPUT_PER_M;
 
+      // Log audit completed
+      void logEvent({
+        eventType: "audit_completed",
+        agencyId,
+        userId,
+        clientId: data.clientId,
+        detail: `score=${parsed.score} url=${data.pageUrl}`,
+      });
+
       await supabase
         .from("audits")
         .update({
@@ -416,6 +426,13 @@ export const runAudit = createServerFn({ method: "POST" })
       return { auditId, parsed };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Audit failed";
+      void logEvent({
+        eventType: "audit_failed",
+        agencyId,
+        userId,
+        clientId: data.clientId,
+        detail: msg.slice(0, 300),
+      });
       await supabase
         .from("audits")
         .update({ status: "failed", error_message: msg.slice(0, 500) })
