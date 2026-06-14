@@ -1,49 +1,54 @@
-// Server-only AES-256-GCM helper for credential encryption.
-// INTEGRATION_ENCRYPTION_KEY must be set; it's used as a passphrase from
-// which a 32-byte key is derived via SHA-256.
-//
-// Output format: base64( iv[12] || authTag[16] || ciphertext )
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
+// AES-256-GCM encryption for OAuth tokens stored in the database.
 
-function getKey(): Buffer {
-  const passphrase =
-    process.env.SUPABASE_ENCRYPTION_KEY ||
-    process.env.INTEGRATION_ENCRYPTION_KEY;
-  if (!passphrase) {
+declare const __SUPABASE_ENCRYPTION_KEY__: string | undefined;
+
+function getEncryptionKey(): string {
+  const key =
+    (typeof __SUPABASE_ENCRYPTION_KEY__ !== 'undefined' && __SUPABASE_ENCRYPTION_KEY__) ||
+    (typeof process !== 'undefined' && process.env?.SUPABASE_ENCRYPTION_KEY) ||
+    null;
+
+  if (!key || key.length < 32) {
     throw new Error(
       "SUPABASE_ENCRYPTION_KEY is not configured. " +
-      "Generate one with: openssl rand -hex 32"
+      "Set it in your environment variables (64-char hex string)."
     );
   }
-  return createHash("sha256").update(passphrase, "utf8").digest();
+  return key;
 }
 
-export function encryptString(plaintext: string): string {
-  const key = getKey();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, encrypted]).toString("base64");
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return bytes;
 }
 
-export function decryptString(payload: string): string {
-  const key = getKey();
-  const buf = Buffer.from(payload, "base64");
-  if (buf.length < 28) throw new Error("Encrypted payload too short");
-  const iv = buf.subarray(0, 12);
-  const tag = buf.subarray(12, 28);
-  const ciphertext = buf.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-  return decrypted.toString("utf8");
+export async function encryptToken(plaintext: string): Promise<string> {
+  const keyHex = getEncryptionKey();
+  const keyBytes = hexToBytes(keyHex.slice(0, 64));
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, encoded);
+  const combined = new Uint8Array(12 + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), 12);
+  return btoa(String.fromCharCode(...combined));
 }
 
-export function encryptJSON<T>(obj: T): string {
-  return encryptString(JSON.stringify(obj));
-}
-
-export function decryptJSON<T = unknown>(payload: string): T {
-  return JSON.parse(decryptString(payload)) as T;
+export async function decryptToken(encrypted: string): Promise<string> {
+  const keyHex = getEncryptionKey();
+  const keyBytes = hexToBytes(keyHex.slice(0, 64));
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+  );
+  const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, ciphertext);
+  return new TextDecoder().decode(plaintext);
 }

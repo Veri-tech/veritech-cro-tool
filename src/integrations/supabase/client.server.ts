@@ -1,34 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function getServiceRoleKey(): string {
-  // Try process.env first (standard Node.js)
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return process.env.SUPABASE_SERVICE_ROLE_KEY;
-  }
-
-  // Try Nitro runtime config
-  try {
-    const { useRuntimeConfig } = require('nitro/runtime');
-    const config = useRuntimeConfig();
-    if (config?.supabaseServiceRoleKey) return config.supabaseServiceRoleKey;
-    if (config?.SUPABASE_SERVICE_ROLE_KEY) return config.SUPABASE_SERVICE_ROLE_KEY;
-  } catch {}
-
-  // Try globalThis
-  const g = globalThis as Record<string, unknown>;
-  if (typeof g.SUPABASE_SERVICE_ROLE_KEY === 'string') {
-    return g.SUPABASE_SERVICE_ROLE_KEY;
-  }
-
-  throw new Error('[Supabase Admin] SUPABASE_SERVICE_ROLE_KEY not found in any env source.');
-}
-
 function createSupabaseAdminClient() {
   const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
-  const SUPABASE_SERVICE_ROLE_KEY = getServiceRoleKey();
+  
+  // Try all possible sources - edge runtime, node runtime, build-time inject
+  const SUPABASE_SERVICE_ROLE_KEY = 
+    // Build-time injected via Vite define (works in edge runtime too)
+    (typeof __SUPABASE_SERVICE_ROLE_KEY__ !== 'undefined' && __SUPABASE_SERVICE_ROLE_KEY__) ||
+    // Standard Node.js process.env (works in nodejs runtime)
+    (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY) ||
+    // Vercel edge runtime env
+    (typeof globalThis !== 'undefined' && (globalThis as any).env?.SUPABASE_SERVICE_ROLE_KEY) ||
+    null;
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('[Supabase Admin] SUPABASE_SERVICE_ROLE_KEY not available.');
+  }
+
+  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY as string, {
     auth: {
       storage: undefined,
       persistSession: false,
