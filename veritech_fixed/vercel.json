@@ -1,15 +1,23 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": ".output/public",
-  "functions": {
-    "api/**": {
-      "maxDuration": 55
-    }
-  },
-  "rewrites": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/((?!_build|favicon.ico).*)",
-      "destination": "/.output/server/index.mjs"
+      "src": "dist/server/server.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "dist/client/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "/dist/client/assets/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/dist/server/server.js"
     }
   ]
 }
