@@ -27,29 +27,37 @@ function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-    if (err) {
+
+    const { data: signInData, error: err } = await supabase.auth.signInWithPassword({ email, password });
+    if (err || !signInData.user) {
       setLoading(false);
       setError("Incorrect email or password. Please try again.");
       return;
     }
-    // Determine role -> destination
-    const { data: userData } = await supabase.auth.getUser();
-    let role: string | null = (userData.user?.user_metadata as { role?: string } | null)?.role ?? null;
-    if (!role && userData.user) {
+
+    // Get role from user_metadata first (fastest)
+    let role: string | null = (signInData.user.user_metadata as { role?: string } | null)?.role ?? null;
+
+    // Fall back to profiles table
+    if (!role) {
       const { data: profile } = await supabase
-        .from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
+        .from("profiles").select("role").eq("id", signInData.user.id).maybeSingle();
       role = (profile as { role?: string } | null)?.role ?? null;
     }
+
     setLoading(false);
+
     if (!role) {
-      navigate({ to: "/complete-setup", replace: true });
+      window.location.href = "/complete-setup";
       return;
     }
+
     const dest = search.redirect && search.redirect.startsWith("/")
       ? search.redirect
       : homePathForRole(role as "super_admin" | "agency_admin" | "client" | null);
-    navigate({ to: dest, replace: true });
+
+    // Use window.location for reliable redirect after auth
+    window.location.href = dest;
   }
 
   return (
