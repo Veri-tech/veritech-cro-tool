@@ -1,20 +1,32 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function createSupabaseAdminClient() {
-  // Nitro on Vercel exposes env vars via process.env at runtime
-  // We hardcode the URL since it's not secret, and read the service role key from env
-  const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
-  
-  const SUPABASE_SERVICE_ROLE_KEY =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env['SUPABASE_SERVICE_ROLE_KEY'];
-
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      `[Supabase Admin] Missing SUPABASE_SERVICE_ROLE_KEY environment variable.`
-    );
+function getServiceRoleKey(): string {
+  // Try process.env first (standard Node.js)
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
+
+  // Try Nitro runtime config
+  try {
+    const { useRuntimeConfig } = require('nitro/runtime');
+    const config = useRuntimeConfig();
+    if (config?.supabaseServiceRoleKey) return config.supabaseServiceRoleKey;
+    if (config?.SUPABASE_SERVICE_ROLE_KEY) return config.SUPABASE_SERVICE_ROLE_KEY;
+  } catch {}
+
+  // Try globalThis
+  const g = globalThis as Record<string, unknown>;
+  if (typeof g.SUPABASE_SERVICE_ROLE_KEY === 'string') {
+    return g.SUPABASE_SERVICE_ROLE_KEY;
+  }
+
+  throw new Error('[Supabase Admin] SUPABASE_SERVICE_ROLE_KEY not found in any env source.');
+}
+
+function createSupabaseAdminClient() {
+  const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
+  const SUPABASE_SERVICE_ROLE_KEY = getServiceRoleKey();
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {

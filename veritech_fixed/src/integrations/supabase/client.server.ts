@@ -1,23 +1,32 @@
-// Server-side only - uses service role key that bypasses RLS.
-// NEVER import this at the top level of route files or client components.
-// Always use dynamic import inside server functions:
-//   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-function createSupabaseAdminClient() {
-  // Only read from process.env - never from import.meta.env
-  // This ensures this key is never bundled into client-side code
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      `[Supabase Admin] Missing server environment variables. ` +
-      `Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in your deployment environment.`
-    );
+function getServiceRoleKey(): string {
+  // Try process.env first (standard Node.js)
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
+
+  // Try Nitro runtime config
+  try {
+    const { useRuntimeConfig } = require('nitro/runtime');
+    const config = useRuntimeConfig();
+    if (config?.supabaseServiceRoleKey) return config.supabaseServiceRoleKey;
+    if (config?.SUPABASE_SERVICE_ROLE_KEY) return config.SUPABASE_SERVICE_ROLE_KEY;
+  } catch {}
+
+  // Try globalThis
+  const g = globalThis as Record<string, unknown>;
+  if (typeof g.SUPABASE_SERVICE_ROLE_KEY === 'string') {
+    return g.SUPABASE_SERVICE_ROLE_KEY;
+  }
+
+  throw new Error('[Supabase Admin] SUPABASE_SERVICE_ROLE_KEY not found in any env source.');
+}
+
+function createSupabaseAdminClient() {
+  const SUPABASE_URL = 'https://afyrxulrwartxwpxfylj.supabase.co';
+  const SUPABASE_SERVICE_ROLE_KEY = getServiceRoleKey();
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: {
