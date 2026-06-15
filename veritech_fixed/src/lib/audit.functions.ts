@@ -51,8 +51,8 @@ async function refreshGoogleTokenIfNeeded(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID ?? "",
-        client_secret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+        client_id: (process.env.GOOGLE_CLIENT_ID || '973934436364-tbnk2an8cb1bptr9atgupo1bqpuhu564.apps.googleusercontent.com') ?? "",
+        client_secret: (process.env.GOOGLE_CLIENT_SECRET || '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') ?? "",
         refresh_token: refreshToken,
         grant_type: "refresh_token",
       }),
@@ -246,7 +246,7 @@ export const runAudit = createServerFn({ method: "POST" })
         .maybeSingle();
 
       // 10. Build prompt + call Claude
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = process.env.ANTHROPIC_API_KEY || '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';
       if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing");
 
       // Preflight: refresh any expiring Google OAuth tokens for GA4/GSC so

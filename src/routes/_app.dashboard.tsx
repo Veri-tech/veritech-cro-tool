@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LayoutDashboard, Users, PlayCircle, BarChart3, Plug, Settings, Menu, X, LogOut,
+  LayoutDashboard, Users, PlayCircle, BarChart3, Plug, Settings, Menu, X, LogOut, ShieldCheck,
 } from "lucide-react";
 import { useSession, homePathForRole, signOutAndRedirect } from "@/lib/auth";
 import { VeritechLogo } from "@/components/Logo";
@@ -117,6 +117,12 @@ function DashboardLayout() {
           </button>
           <div className="lg:hidden"><VeritechLogo size={28} /></div>
           <div className="flex items-center gap-3 ml-auto">
+            {role === "super_admin" && (
+              <Link to="/admin" className="vt-btn-secondary hidden sm:flex items-center gap-1.5 text-xs">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Admin
+              </Link>
+            )}
             <NotificationBell />
             <span className="hidden sm:inline text-sm text-[color:var(--muted)]">
               {data?.profile?.full_name ?? data?.user?.email}

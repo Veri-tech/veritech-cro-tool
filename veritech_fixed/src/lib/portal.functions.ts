@@ -234,7 +234,7 @@ export const runClientAudit = createServerFn({ method: "POST" })
         .eq("client_id", client.id).eq("status", "completed")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = process.env.ANTHROPIC_API_KEY || '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';
       if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing");
 
       const prompt = buildAuditPrompt(

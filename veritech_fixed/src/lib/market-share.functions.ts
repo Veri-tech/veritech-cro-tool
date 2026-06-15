@@ -133,7 +133,7 @@ export const startMarketShareJob = createServerFn({ method: "POST" })
       .single();
     if (jErr || !jobRow) throw new Error(`Failed to create job: ${jErr?.message}`);
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY || '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';
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing");
 
     const { executeMarketShareJob } = await import("./market-share.server");
@@ -217,7 +217,7 @@ export const resumeMarketShareJob = createServerFn({ method: "POST" })
       .update({ status: "running", can_resume: false })
       .eq("id", job.id);
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY || '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';
     if (!apiKey) throw new Error("ANTHROPIC_API_KEY missing");
 
     const { executeMarketShareJob } = await import("./market-share.server");
