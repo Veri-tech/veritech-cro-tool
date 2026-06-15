@@ -106,18 +106,40 @@ export const Route = createFileRoute("/api/auth/google/callback")({
         const { encryptString } = await import("@/lib/crypto.server");
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-        const { data: clientRow, error: clientErr } = await supabaseAdmin
-          .from("clients")
-          .select("id, agency_id")
-          .eq("portal_user_id", userId)
-          .maybeSingle();
-        if (clientErr) return new Response(clientErr.message, { status: 500 });
+        // Check if this is agency-initiated or client-initiated
+        const oauthMode = getCookie("google_oauth_mode");
+        const agencyClientId = getCookie("google_oauth_client_id");
+
+        let clientRow: { id: string; agency_id: string } | null = null;
+
+        if (oauthMode === "agency" && agencyClientId) {
+          // Agency mode: look up client directly by clientId
+          const { data: c, error: cErr } = await supabaseAdmin
+            .from("clients")
+            .select("id, agency_id")
+            .eq("id", agencyClientId)
+            .maybeSingle();
+          if (cErr) return new Response(cErr.message, { status: 500 });
+          clientRow = c;
+        } else {
+          // Client portal mode: look up by portal_user_id
+          const { data: c, error: cErr } = await supabaseAdmin
+            .from("clients")
+            .select("id, agency_id")
+            .eq("portal_user_id", userId)
+            .maybeSingle();
+          if (cErr) return new Response(cErr.message, { status: 500 });
+          clientRow = c;
+        }
+
         if (!clientRow) {
           return new Response("No client linked to this account.", { status: 400 });
         }
 
-        const accessEnc = encryptString(tokens.access_token);
-        const refreshEnc = tokens.refresh_token ? encryptString(tokens.refresh_token) : null;
+        const [accessEnc, refreshEnc] = await Promise.all([
+          encryptString(tokens.access_token),
+          tokens.refresh_token ? encryptString(tokens.refresh_token) : Promise.resolve(null),
+        ]);
         const expiry = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString();
         const nowIso = new Date().toISOString();
 
@@ -152,13 +174,20 @@ export const Route = createFileRoute("/api/auth/google/callback")({
 
         deleteCookie("google_oauth_state");
         deleteCookie("google_oauth_uid");
+        deleteCookie("google_oauth_client_id");
+        deleteCookie("google_oauth_mode");
 
         void logEvent({
           eventType: "oauth_connected",
           userId,
           clientId: clientRow.id,
-          detail: "provider=google email=" + email,
+          detail: `provider=google email=${me.email ?? "unknown"} mode=${oauthMode ?? "client"}`,
         });
+
+        // Redirect back to integrations dashboard if agency mode
+        if (oauthMode === "agency") {
+          return Response.redirect(`${appUrl}/dashboard/integrations?success=google&client=${clientRow.id}`, 302);
+        }
         return back("?success=google");
       },
     },

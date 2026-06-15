@@ -6,8 +6,9 @@ import { toast } from "sonner";
 import {
   CheckCircle2, XCircle, AlertCircle, RotateCw, Trash2, AlertTriangle,
   ChevronDown, ChevronRight, ToggleLeft, ToggleRight, Plus, Pencil,
-  Database, BarChart3, Search, TrendingUp, ClipboardList, Key,
+  Database, BarChart3, Search, TrendingUp, ClipboardList, Key, ExternalLink,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import {
   listAgencyIntegrations,
   adminTestIntegration,
@@ -19,6 +20,10 @@ import {
   PROVIDER_DESCRIPTIONS,
   PROVIDER_FREE,
 } from "@/lib/integrations-admin.functions";
+import {
+  getClientOAuthProperties,
+  saveClientOAuthSelection,
+} from "@/lib/integrations.functions";
 
 export const Route = createFileRoute("/_app/dashboard/integrations")({
   ssr: false,
@@ -134,6 +139,13 @@ function IntegrationsPage() {
           onClose={() => setAgencyKeyModal(null)}
         />
       )}
+      {propertyModal && (
+        <PropertySelectorModal
+          clientId={c.id}
+          clientName={c.name}
+          onClose={() => { setPropertyModal(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -141,6 +153,8 @@ function IntegrationsPage() {
 function ClientCard({ c }: { c: any }) {
   const [expanded, setExpanded] = useState(false);
   const [manualModal, setManualModal] = useState(false);
+  const [agencyKeyModal, setAgencyKeyModal] = useState<"dataforseo" | "semrush" | null>(null);
+  const [propertyModal, setPropertyModal] = useState(false);
 
   return (
     <div className="vt-card overflow-hidden">
@@ -203,6 +217,8 @@ function ClientCard({ c }: { c: any }) {
                 provider={p}
                 row={c.providers[p]}
                 onManualEdit={p === "manual" ? () => setManualModal(true) : undefined}
+                onAddAgencyKey={p === "dataforseo" || p === "semrush" ? (prov) => setAgencyKeyModal(prov as "dataforseo" | "semrush") : undefined}
+                onOpenPropertyModal={(p === "google" || p === "gsc") ? () => setPropertyModal(true) : undefined}
               />
             ))}
           </div>
@@ -217,18 +233,33 @@ function ClientCard({ c }: { c: any }) {
           onClose={() => setManualModal(false)}
         />
       )}
+      {agencyKeyModal && (
+        <AgencyKeyModal
+          provider={agencyKeyModal}
+          onClose={() => setAgencyKeyModal(null)}
+        />
+      )}
+      {propertyModal && (
+        <PropertySelectorModal
+          clientId={c.id}
+          clientName={c.name}
+          onClose={() => { setPropertyModal(false); }}
+        />
+      )}
     </div>
   );
 }
 
 function ProviderRow({
-  clientId, clientName, provider, row, onManualEdit,
+  clientId, clientName, provider, row, onManualEdit, onAddAgencyKey, onOpenPropertyModal,
 }: {
   clientId: string;
   clientName: string;
   provider: Provider;
   row: any;
   onManualEdit?: () => void;
+  onAddAgencyKey?: (provider: string) => void;
+  onOpenPropertyModal?: () => void;
 }) {
   const qc = useQueryClient();
   const testFn = useServerFn(adminTestIntegration);
@@ -338,9 +369,46 @@ function ProviderRow({
             {has ? "Edit" : "Add data"}
           </button>
         ) : !has ? (
-          <span className="text-xs text-[color:var(--muted)]/60">
-            {provider === "google" || provider === "gsc" ? "Connect via client portal" : "Add key →"}
-          </span>
+          provider === "google" || provider === "gsc" ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const token = session?.access_token;
+                  if (!token) { toast.error("Not logged in"); return; }
+                  const appUrl = window.location.origin;
+                  const popup = window.open(
+                    `${appUrl}/api/auth/google/agency-start?clientId=${clientId}&token=${token}`,
+                    "google-oauth",
+                    "width=600,height=700,left=200,top=100"
+                  );
+                  // Poll for popup close then refresh + open property selector
+                  const timer = setInterval(() => {
+                    if (popup?.closed) {
+                      clearInterval(timer);
+                      // Small delay then open property selector
+                      setTimeout(() => {
+                        onOpenPropertyModal?.();
+                      }, 1000);
+                    }
+                  }, 500);
+                }}
+                className="text-xs flex items-center gap-1 text-[color:var(--accent)] hover:underline font-medium"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Connect {provider === "google" ? "GA4" : "GSC"}
+              </button>
+            </div>
+          ) : onAddAgencyKey ? (
+            <button
+              onClick={() => onAddAgencyKey(provider)}
+              className="text-xs flex items-center gap-1 text-[color:var(--accent)] hover:underline font-medium"
+            >
+              <Plus className="h-3 w-3" /> Add agency key
+            </button>
+          ) : (
+            <span className="text-xs text-[color:var(--muted)]/60">Add key →</span>
+          )
         ) : (
           <div className="flex gap-2">
             <button
@@ -461,6 +529,127 @@ function ManualDataModal({ clientId, clientName, existing, onClose }: {
           <button onClick={onClose} className="vt-btn-secondary flex-1">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="vt-btn-primary flex-1">
             {saving ? "Saving…" : "Save Data"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PropertySelectorModal({ clientId, clientName, onClose }: {
+  clientId: string;
+  clientName: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const getPropsFn = useServerFn(getClientOAuthProperties);
+  const saveFn = useServerFn(saveClientOAuthSelection);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [props, setProps] = useState<any>(null);
+  const [selectedGa4, setSelectedGa4] = useState("");
+  const [selectedGsc, setSelectedGsc] = useState("");
+
+  useEffect(() => {
+    getPropsFn({ data: { clientId } })
+      .then((d) => {
+        setProps(d);
+        setSelectedGa4(d.ga4Selected ?? "");
+        setSelectedGsc(d.gscSelected ?? "");
+      })
+      .catch((e) => toast.error(e.message))
+      .finally(() => setLoading(false));
+  }, [clientId]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await saveFn({ data: { clientId, ga4PropertyId: selectedGa4 || undefined, gscSiteUrl: selectedGsc || undefined } });
+      toast.success("GA4 & Search Console configured!");
+      await qc.invalidateQueries({ queryKey: ["agency-integrations"] });
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="vt-card w-full max-w-lg p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Select GA4 Property — {clientName}</h2>
+          <p className="text-sm text-[color:var(--muted)] mt-1">
+            {props?.accountEmail ? `Connected as ${props.accountEmail}` : "Choose which property to use for this client's audits."}
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center text-[color:var(--muted)]">Loading properties…</div>
+        ) : (
+          <div className="space-y-4">
+            {props?.ga4Properties?.length > 0 ? (
+              <div>
+                <label className="block text-xs font-medium text-[color:var(--muted)] mb-2">GA4 Property</label>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {props.ga4Properties.map((p: any) => (
+                    <label key={p.propertyId} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition-colors ${
+                      selectedGa4 === p.propertyId
+                        ? "border-[color:var(--accent)] bg-[color:var(--accent)]/10"
+                        : "border-[color:var(--border)] hover:border-[color:var(--accent)]/50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="ga4"
+                        value={p.propertyId}
+                        checked={selectedGa4 === p.propertyId}
+                        onChange={() => setSelectedGa4(p.propertyId)}
+                        className="accent-[color:var(--accent)]"
+                      />
+                      <div>
+                        <div className="text-sm font-medium">{p.displayName}</div>
+                        <div className="text-xs text-[color:var(--muted)]">ID: {p.propertyId}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-amber-400 bg-amber-400/10 rounded-lg px-3 py-2">
+                No GA4 properties found. Make sure the connected Google account has GA4 access.
+              </div>
+            )}
+
+            {props?.gscSites?.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-[color:var(--muted)] mb-2">Search Console Site</label>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  {props.gscSites.map((site: string) => (
+                    <label key={site} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer border transition-colors ${
+                      selectedGsc === site
+                        ? "border-[color:var(--accent)] bg-[color:var(--accent)]/10"
+                        : "border-[color:var(--border)] hover:border-[color:var(--accent)]/50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="gsc"
+                        value={site}
+                        checked={selectedGsc === site}
+                        onChange={() => setSelectedGsc(site)}
+                        className="accent-[color:var(--accent)]"
+                      />
+                      <span className="text-sm">{site}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="vt-btn-secondary flex-1">Cancel</button>
+          <button onClick={handleSave} disabled={saving || loading || (!selectedGa4 && !selectedGsc)} className="vt-btn-primary flex-1 disabled:opacity-50">
+            {saving ? "Saving…" : "Save Selection"}
           </button>
         </div>
       </div>
