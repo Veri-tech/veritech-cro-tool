@@ -139,13 +139,6 @@ function IntegrationsPage() {
           onClose={() => setAgencyKeyModal(null)}
         />
       )}
-      {propertyModal && (
-        <PropertySelectorModal
-          clientId={c.id}
-          clientName={c.name}
-          onClose={() => { setPropertyModal(false); }}
-        />
-      )}
     </div>
   );
 }
