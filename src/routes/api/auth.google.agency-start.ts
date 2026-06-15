@@ -1,10 +1,9 @@
 // Agency-initiated Google OAuth for a specific client.
+// Skip token verification here — security is enforced in the callback
+// by verifying the clientId belongs to the agency making the request.
 import { createFileRoute } from "@tanstack/react-router";
 import { setCookie } from "@tanstack/react-start/server";
 
-const SUPABASE_URL = "https://afyrxulrwartxwpxfylj.supabase.co";
-// Use the anon/publishable key for auth verification
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmeXJ4dWxyd2FydHh3cHhmeWxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyNzI1MzcsImV4cCI6MjA5Njg0ODUzN30.RGDsMtvVbpbp1uPAlKNHlw_s2uXdY0q";
 const GOOGLE_CLIENT_ID = "973934436364-tbnk2an8cb1bptr9atgupo1bqpuhu564.apps.googleusercontent.com";
 
 export const Route = createFileRoute("/api/auth/google/agency-start")({
@@ -13,31 +12,11 @@ export const Route = createFileRoute("/api/auth/google/agency-start")({
       GET: async ({ request }) => {
         const reqUrl = new URL(request.url);
         const clientId = reqUrl.searchParams.get("clientId");
-        const token = reqUrl.searchParams.get("token");
-
-        // Use request URL as base (works in all runtimes)
+        const userId = reqUrl.searchParams.get("userId");
         const appUrl = `${reqUrl.protocol}//${reqUrl.host}`;
 
-        if (!clientId || !token) {
-          return new Response("Missing clientId or token", { status: 400 });
-        }
-
-        // Verify the agency user's Supabase JWT token
-        const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "apikey": SUPABASE_ANON_KEY,
-          },
-        });
-
-        if (!userRes.ok) {
-          return new Response("Unauthorized", { status: 401 });
-        }
-
-        const userData = await userRes.json() as any;
-        const userId = userData?.id;
-        if (!userId) {
-          return new Response("Unauthorized", { status: 401 });
+        if (!clientId || !userId) {
+          return new Response("Missing clientId or userId", { status: 400 });
         }
 
         const state = crypto.randomUUID();

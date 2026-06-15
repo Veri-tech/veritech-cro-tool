@@ -303,10 +303,10 @@ function ProviderRow({ clientId, clientName, provider, row, onManualEdit, onAddA
             <button
               onClick={async () => {
                 const { data: { session } } = await supabase.auth.getSession();
-                const token = session?.access_token;
-                if (!token) { toast.error("Not logged in"); return; }
+                const userId = session?.user?.id;
+                if (!userId) { toast.error("Not logged in"); return; }
                 const popup = window.open(
-                  `${window.location.origin}/api/auth/google/agency-start?clientId=${clientId}&token=${token}`,
+                  `${window.location.origin}/api/auth/google/agency-start?clientId=${clientId}&userId=${userId}`,
                   "google-oauth", "width=600,height=700,left=200,top=100"
                 );
                 const timer = setInterval(() => {
