@@ -1,24 +1,40 @@
 // Agency-side server fns: list clients' integration status, run admin
-// test/disconnect actions, and compute audit readiness.
+// test/disconnect actions, manage API keys, manual data, and compute audit readiness.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { logEvent } from "@/lib/event-log.server";
 
-type Provider = "google" | "gsc" | "semrush" | "dataforseo";
-const ProviderEnum = z.enum(["google", "gsc", "semrush", "dataforseo"]);
+type Provider = "google" | "gsc" | "semrush" | "dataforseo" | "manual";
+const ProviderEnum = z.enum(["google", "gsc", "semrush", "dataforseo", "manual"]);
 
-// Required = bare minimum the audit pipeline needs for real (non-estimated) data.
-// Recommended = nice-to-have, audit still runs without it.
-export const REQUIRED_PROVIDERS: Provider[] = ["google"];
-export const RECOMMENDED_PROVIDERS: Provider[] = ["gsc"];
-export const ALL_PROVIDERS: Provider[] = ["google", "gsc", "semrush", "dataforseo"];
+export const REQUIRED_PROVIDERS: Provider[] = [];  // Nothing required — any source works
+export const RECOMMENDED_PROVIDERS: Provider[] = ["google"];
+export const ALL_PROVIDERS: Provider[] = ["google", "gsc", "semrush", "dataforseo", "manual"];
+export const DATA_PROVIDERS: Provider[] = ["google", "gsc", "semrush", "dataforseo", "manual"];
 
 export const PROVIDER_LABELS: Record<Provider, string> = {
   google: "Google Analytics 4",
   gsc: "Google Search Console",
   semrush: "Semrush",
   dataforseo: "DataForSEO",
+  manual: "Manual Data",
+};
+
+export const PROVIDER_DESCRIPTIONS: Record<Provider, string> = {
+  google: "Pull real GA4 sessions, users, conversion rate & bounce rate automatically",
+  gsc: "Pull search clicks, impressions, CTR & position from Search Console",
+  semrush: "Pull organic keywords & traffic estimates (paid Semrush account required)",
+  dataforseo: "Free alternative to Semrush for organic traffic data",
+  manual: "Manually enter analytics data for clients without connected accounts",
+};
+
+export const PROVIDER_FREE: Record<Provider, boolean> = {
+  google: true,   // free via OAuth
+  gsc: true,      // free via OAuth
+  semrush: false, // paid
+  dataforseo: true, // free tier available
+  manual: true,   // always free
 };
 
 async function requireAgencyProfile(supabase: any, userId: string) {
@@ -58,7 +74,7 @@ export const listAgencyIntegrations = createServerFn({ method: "GET" })
 
     const { data: integrations, error: iErr } = await supabase
       .from("client_integrations_safe")
-      .select("client_id, provider, status, account_email, last_synced_at, last_error, has_credentials")
+      .select("client_id, provider, status, account_email, last_synced_at, last_error, has_credentials, auth_method")
       .eq("agency_id", profile.agency_id);
     if (iErr) throw new Error(iErr.message);
 
@@ -69,14 +85,21 @@ export const listAgencyIntegrations = createServerFn({ method: "GET" })
       byClient.set(row.client_id!, m);
     }
 
+    // Get agency-level settings (DataForSEO agency key, etc.)
+    const { data: agencySettings } = await supabase
+      .from("agencies")
+      .select("settings")
+      .eq("id", profile.agency_id)
+      .maybeSingle();
+
+    const agencyApiKeys = (agencySettings?.settings as any)?.apiKeys ?? {};
+
     const rows = (clients ?? []).map((c) => {
       const m = byClient.get(c.id) ?? {};
-      const connectedCount = ALL_PROVIDERS.filter(
+      const connectedCount = DATA_PROVIDERS.filter(
         (p) => m[p]?.has_credentials && m[p]?.status === "active",
       ).length;
-      const missingRequired = REQUIRED_PROVIDERS.filter(
-        (p) => !(m[p]?.has_credentials && m[p]?.status === "active"),
-      );
+      const hasAnyDataSource = connectedCount > 0;
       return {
         id: c.id,
         name: c.name,
@@ -85,13 +108,112 @@ export const listAgencyIntegrations = createServerFn({ method: "GET" })
         has_portal_user: !!c.portal_user_id,
         providers: Object.fromEntries(ALL_PROVIDERS.map((p) => [p, m[p] ?? null])),
         connectedCount,
-        totalProviders: ALL_PROVIDERS.length,
-        ready: missingRequired.length === 0,
-        missingRequired,
+        totalProviders: DATA_PROVIDERS.length,
+        ready: hasAnyDataSource,
+        missingRequired: hasAnyDataSource ? [] : ["any"],
       };
     });
 
-    return { rows };
+    return { rows, agencyApiKeys };
+  });
+
+// ---------- Save agency-level API key (DataForSEO, etc.) ----------
+export const saveAgencyApiKey = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    provider: z.enum(["dataforseo", "semrush"]),
+    credentials: z.record(z.string()),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireAgencyProfile(supabase, userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { encryptJSON } = await import("@/lib/crypto.server");
+
+    const encrypted = await encryptJSON(data.credentials);
+
+    // Store in agencies.settings.apiKeys
+    const { data: agency } = await supabaseAdmin
+      .from("agencies")
+      .select("settings")
+      .eq("id", profile.agency_id)
+      .maybeSingle();
+
+    const currentSettings = (agency?.settings as any) ?? {};
+    const apiKeys = currentSettings.apiKeys ?? {};
+    apiKeys[data.provider] = encrypted;
+
+    await supabaseAdmin
+      .from("agencies")
+      .update({ settings: { ...currentSettings, apiKeys } })
+      .eq("id", profile.agency_id);
+
+    return { ok: true };
+  });
+
+// ---------- Save manual data for a client ----------
+export const saveManualData = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    clientId: z.string().uuid(),
+    data: z.object({
+      sessions: z.number().optional(),
+      users: z.number().optional(),
+      conversion_rate: z.number().optional(),
+      bounce_rate: z.number().optional(),
+      avg_order_value: z.number().optional(),
+      organic_keywords: z.number().optional(),
+      organic_traffic: z.number().optional(),
+      clicks: z.number().optional(),
+      impressions: z.number().optional(),
+    }),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireAgencyProfile(supabase, userId);
+    await requireClientInAgency(supabase, data.clientId, profile.agency_id);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { encryptJSON } = await import("@/lib/crypto.server");
+
+    const encrypted = await encryptJSON(data.data);
+
+    await supabaseAdmin
+      .from("client_integrations")
+      .upsert({
+        client_id: data.clientId,
+        agency_id: profile.agency_id,
+        provider: "manual",
+        auth_method: "manual",
+        manual_credentials: encrypted,
+        status: "active",
+        last_synced_at: new Date().toISOString(),
+        last_error: null,
+      }, { onConflict: "client_id,provider" });
+
+    return { ok: true };
+  });
+
+// ---------- Toggle provider enabled/disabled for a client ----------
+export const toggleClientProvider = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({
+    clientId: z.string().uuid(),
+    provider: ProviderEnum,
+    enabled: z.boolean(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireAgencyProfile(supabase, userId);
+    await requireClientInAgency(supabase, data.clientId, profile.agency_id);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    await supabaseAdmin
+      .from("client_integrations")
+      .update({ status: data.enabled ? "active" : "disabled" })
+      .eq("client_id", data.clientId)
+      .eq("provider", data.provider);
+
+    return { ok: true };
   });
 
 // ---------- Readiness for a single client (agency-side) ----------
@@ -119,15 +241,14 @@ export const getClientReadiness = createServerFn({ method: "GET" })
       }),
     );
 
-    const missingRequired = REQUIRED_PROVIDERS.filter((p) => !providers[p].active);
-    const missingRecommended = RECOMMENDED_PROVIDERS.filter((p) => !providers[p].active);
+    const hasAnyActive = ALL_PROVIDERS.some((p) => providers[p].active);
 
     return {
-      ready: missingRequired.length === 0,
+      ready: hasAnyActive,
       providers,
-      missingRequired,
-      missingRecommended,
-      required: REQUIRED_PROVIDERS,
+      missingRequired: hasAnyActive ? [] : ["any"],
+      missingRecommended: [],
+      required: [],
       recommended: RECOMMENDED_PROVIDERS,
     };
   });
@@ -140,17 +261,15 @@ export async function assertClientReady(supabaseAdmin: any, clientId: string) {
     .eq("client_id", clientId);
   const map = new Map<string, any>();
   for (const r of rows ?? []) map.set(r.provider as string, r);
-  const missing = REQUIRED_PROVIDERS.filter((p) => {
+  const hasAny = ALL_PROVIDERS.some((p) => {
     const r = map.get(p);
-    return !(r?.manual_credentials && r.status === "active");
+    return r?.manual_credentials && r.status === "active";
   });
-  if (missing.length) {
-    const labels = missing.map((p) => PROVIDER_LABELS[p]).join(", ");
+  if (!hasAny) {
     const err = new Error(
-      `Cannot run audit — missing required integration(s): ${labels}. Ask the client to connect them from the portal's Connect Tools page, or paste the credentials yourself.`,
+      `Cannot run audit — no data sources configured. Add a GA4 connection, DataForSEO key, or enter manual data in the Integrations section.`,
     );
     (err as any).code = "INTEGRATIONS_MISSING";
-    (err as any).missing = missing;
     throw err;
   }
 }
@@ -177,12 +296,14 @@ export const adminTestIntegration = createServerFn({ method: "POST" })
       return { ok: false, message: "No credentials saved for this client." };
     }
     let creds: any;
-    try { creds = decryptJSON(row.manual_credentials); }
+    try { creds = await decryptJSON(row.manual_credentials); }
     catch { return { ok: false, message: "Could not decrypt saved credentials." }; }
 
     let result: { ok: boolean; message: string };
     try {
-      if (data.provider === "semrush") {
+      if (data.provider === "manual") {
+        result = { ok: true, message: "Manual data saved and ready." };
+      } else if (data.provider === "semrush") {
         const r = await fetch(
           `https://api.semrush.com/?type=domain_ranks&key=${encodeURIComponent(creds.apiKey)}&export_columns=Db&domain=example.com&database=us`,
         );
@@ -199,7 +320,6 @@ export const adminTestIntegration = createServerFn({ method: "POST" })
           ? { ok: false, message: `DataForSEO rejected credentials (${j.status_message ?? r.status}).` }
           : { ok: true, message: `DataForSEO connected.` };
       } else {
-        // google / gsc — structural validation already happened on save
         result = { ok: true, message: "Service-account key stored. Used on next audit." };
       }
     } catch (e) {
@@ -215,22 +335,6 @@ export const adminTestIntegration = createServerFn({ method: "POST" })
       })
       .eq("client_id", data.clientId)
       .eq("provider", data.provider);
-
-    // EMAIL TEMPLATE 6 — Google/GSC connection expired → client
-    if (!result.ok && (data.provider === "google" || data.provider === "gsc")) {
-      try {
-        const { data: client } = await supabaseAdmin
-          .from("clients").select("portal_user_id").eq("id", data.clientId).maybeSingle();
-        if (client?.portal_user_id) {
-          const { data: pu } = await supabaseAdmin.auth.admin.getUserById(client.portal_user_id);
-          const to = pu?.user?.email;
-          if (to) {
-            const { emailGoogleExpired } = await import("@/lib/email.server");
-            await emailGoogleExpired({ to });
-          }
-        }
-      } catch (e) { console.warn("[email] google-expired:", e); }
-    }
 
     return result;
   });

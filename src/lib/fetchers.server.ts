@@ -199,28 +199,44 @@ export async function gatherAnalyticsForAudit(
   domain: string,
 ): Promise<AnalyticsData | null> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  // Get client integrations
   const { data: rows } = await supabaseAdmin
     .from("client_integrations")
-    .select("provider, manual_credentials, status")
+    .select("provider, manual_credentials, status, auth_method")
     .eq("client_id", clientId)
-    .eq("auth_method", "manual")
-    .in("provider", ["google", "gsc", "semrush", "dataforseo"]);
-
-  if (!rows || rows.length === 0) return null;
+    .in("provider", ["google", "gsc", "semrush", "dataforseo", "manual"]);
 
   const byProvider = new Map<string, string>();
-  for (const r of rows) {
+  for (const r of rows ?? []) {
     if (r.manual_credentials && r.status === "active") {
       byProvider.set(r.provider as string, r.manual_credentials as string);
     }
   }
 
+  // Get agency-level DataForSEO/Semrush keys as fallback
+  const { data: clientRow } = await supabaseAdmin
+    .from("clients").select("agency_id").eq("id", clientId).maybeSingle();
+  let agencyApiKeys: Record<string, string> = {};
+  if (clientRow?.agency_id) {
+    const { data: agencyRow } = await supabaseAdmin
+      .from("agencies").select("settings").eq("id", clientRow.agency_id).maybeSingle();
+    agencyApiKeys = (agencyRow?.settings as any)?.apiKeys ?? {};
+  }
+
+  // If manual data exists, use it as base
+  let manualData: AnalyticsData | null = null;
+  if (byProvider.has("manual")) {
+    manualData = await fetchManualData(byProvider.get("manual")!);
+  }
+
+  // Pull live GA4 and GSC if connected
   const [ga4, gsc] = await Promise.all([
     byProvider.has("google") ? fetchGa4Last30(byProvider.get("google")!) : Promise.resolve(null),
     byProvider.has("gsc") ? fetchGscLast30(byProvider.get("gsc")!, pageUrl) : Promise.resolve(null),
   ]);
 
-  // Try Semrush, fall back to DataForSEO
+  // Competitive: client Semrush > client DataForSEO > agency DataForSEO > agency Semrush
   let competitive: Awaited<ReturnType<typeof fetchSemrushDomain>> = null;
   if (byProvider.has("semrush")) {
     competitive = await fetchSemrushDomain(byProvider.get("semrush")!, domain);
@@ -228,12 +244,54 @@ export async function gatherAnalyticsForAudit(
   if (!competitive && byProvider.has("dataforseo")) {
     competitive = await fetchDataForSeoDomain(byProvider.get("dataforseo")!, domain);
   }
+  if (!competitive && agencyApiKeys["dataforseo"]) {
+    competitive = await fetchDataForSeoDomain(agencyApiKeys["dataforseo"], domain);
+  }
+  if (!competitive && agencyApiKeys["semrush"]) {
+    competitive = await fetchSemrushDomain(agencyApiKeys["semrush"], domain);
+  }
 
-  const out: AnalyticsData = {};
+  // Merge: live data overrides manual data
+  const out: AnalyticsData = { ...(manualData ?? {}) };
   if (ga4) out.ga4 = ga4;
   if (gsc) out.gsc = gsc;
-  // competitive is not part of AnalyticsData; we stash it via an extension
   if (competitive) (out as any).competitive = competitive;
 
   return Object.keys(out).length ? out : null;
+}
+
+// ---------- Manual data passthrough ----------
+export async function fetchManualData(
+  encryptedCreds: string,
+): Promise<AnalyticsData | null> {
+  try {
+    const creds = await decryptJSON<any>(encryptedCreds);
+    const out: AnalyticsData = {};
+    if (creds.sessions || creds.users || creds.conversion_rate || creds.bounce_rate) {
+      out.ga4 = {
+        sessions: creds.sessions ?? 0,
+        users: creds.users ?? 0,
+        conversion_rate: creds.conversion_rate ?? 0,
+        bounce_rate: creds.bounce_rate ?? 0,
+      };
+    }
+    if (creds.clicks || creds.impressions) {
+      out.gsc = {
+        clicks: creds.clicks ?? 0,
+        impressions: creds.impressions ?? 0,
+        avg_ctr: creds.avg_ctr ?? 0,
+        avg_position: creds.avg_position ?? 0,
+      };
+    }
+    if (creds.organic_keywords || creds.organic_traffic) {
+      (out as any).competitive = {
+        rank: null,
+        organic_keywords: creds.organic_keywords ?? null,
+        organic_traffic: creds.organic_traffic ?? null,
+      };
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
 }
