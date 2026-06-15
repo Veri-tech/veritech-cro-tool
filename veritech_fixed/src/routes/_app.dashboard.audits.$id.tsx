@@ -6,6 +6,7 @@ import { ArrowLeft, Download, FileText, Loader2, RefreshCw } from "lucide-react"
 import { getAuditById, retryAudit } from "@/lib/audit.functions";
 import { savePdfUrl, getPdfSignedUrl } from "@/lib/uploads.functions";
 import { AuditResults } from "@/components/AuditResults";
+import { AuditChat } from "@/components/AuditChat";
 import { ParsedAudit } from "@/lib/parse";
 import { Skeleton } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";

@@ -6,6 +6,14 @@ export interface AuditPromptInput {
   industry: string;
   trafficVolume: number;
   aov: number;
+  // Enhanced context
+  pageGoal?: string;
+  targetAudience?: string;
+  primaryCta?: string;
+  deviceSplit?: string;
+  topTrafficSources?: string;
+  competitorUrls?: string;
+  additionalContext?: string;
 }
 
 export interface AnalyticsData {
@@ -47,17 +55,30 @@ export function buildAuditPrompt(
     blocks.push("Do not use generic estimates when real figures provided.\n");
   }
 
-  blocks.push(
+  const contextBlocks: string[] = [
     `You are a senior CRO (Conversion Rate Optimisation) analyst auditing a live web page for ${input.clientName}.`,
     `Industry: ${input.industry}`,
     `Page label: ${input.pageLabel}`,
     `Page URL: ${input.pageUrl}`,
     `Monthly traffic to this page: ${input.trafficVolume.toLocaleString()} sessions`,
     `Average order value (ZAR): R${input.aov.toLocaleString()}`,
+  ];
+
+  if (input.pageGoal) contextBlocks.push(`Page goal: ${input.pageGoal}`);
+  if (input.targetAudience) contextBlocks.push(`Target audience: ${input.targetAudience}`);
+  if (input.primaryCta) contextBlocks.push(`Primary CTA: ${input.primaryCta}`);
+  if (input.deviceSplit) contextBlocks.push(`Device split: ${input.deviceSplit}`);
+  if (input.topTrafficSources) contextBlocks.push(`Top traffic sources: ${input.topTrafficSources}`);
+  if (input.competitorUrls) contextBlocks.push(`Competitor URLs to benchmark against: ${input.competitorUrls}`);
+  if (input.additionalContext) contextBlocks.push(`Additional context: ${input.additionalContext}`);
+
+  contextBlocks.push(
     "",
     "All revenue figures MUST be in South African Rand (R), calculated from real traffic × AOV × estimated lift. Be specific to the page content (no generic boilerplate).",
     "",
   );
+
+  blocks.push(...contextBlocks);
 
   if (previousAudit) {
     const trimmed = previousAudit.slice(0, 3000);

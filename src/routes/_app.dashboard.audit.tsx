@@ -21,7 +21,8 @@ import { generateAuditPdf } from "@/lib/pdf";
 import { validateAuditUrl } from "@/lib/validate";
 import { supabase } from "@/integrations/supabase/client";
 import { AuditResults } from "@/components/AuditResults";
-import { AlertTriangle, CheckCircle2, Plug, Download, UserPlus, TrendingUp, Bell, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Plug, Download, UserPlus, TrendingUp, Bell, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { AuditChat } from "@/components/AuditChat";
 
 import type { ParsedAudit } from "@/lib/parse";
 
@@ -57,6 +58,14 @@ function RunAuditPage() {
   const [elapsed, setElapsed] = useState(0);
   const [auditId, setAuditId] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedAudit | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [pageGoal, setPageGoal] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [primaryCta, setPrimaryCta] = useState("");
+  const [deviceSplit, setDeviceSplit] = useState("");
+  const [topTrafficSources, setTopTrafficSources] = useState("");
+  const [competitorUrls, setCompetitorUrls] = useState("");
+  const [additionalContext, setAdditionalContext] = useState("");
 
   const readinessFn = useServerFn(getClientReadiness);
   const { data: readiness } = useQuery({
@@ -98,6 +107,13 @@ function RunAuditPage() {
             industry,
             trafficVolume: Number(traffic) || 0,
             aov: Number(aov) || 0,
+            pageGoal: pageGoal.trim() || undefined,
+            targetAudience: targetAudience.trim() || undefined,
+            primaryCta: primaryCta.trim() || undefined,
+            deviceSplit: deviceSplit.trim() || undefined,
+            topTrafficSources: topTrafficSources.trim() || undefined,
+            competitorUrls: competitorUrls.trim() || undefined,
+            additionalContext: additionalContext.trim() || undefined,
           },
         });
         return res;
@@ -187,6 +203,53 @@ function RunAuditPage() {
           </Field>
         </div>
 
+        {/* Advanced context toggle */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-1.5 text-xs text-[color:var(--accent)] hover:underline"
+          >
+            {showAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            {showAdvanced ? "Hide" : "Add more context"} (improves audit quality)
+          </button>
+
+          {showAdvanced && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-[color:var(--border)]">
+              <Field label="Page goal">
+                <Input value={pageGoal} onChange={(e) => setPageGoal(e.target.value)} placeholder="e.g. Generate leads, Sell product X" />
+              </Field>
+              <Field label="Primary CTA">
+                <Input value={primaryCta} onChange={(e) => setPrimaryCta(e.target.value)} placeholder="e.g. Book a free consultation" />
+              </Field>
+              <Field label="Target audience">
+                <Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder="e.g. SME business owners, 35-55" />
+              </Field>
+              <Field label="Device split">
+                <Input value={deviceSplit} onChange={(e) => setDeviceSplit(e.target.value)} placeholder="e.g. 60% mobile, 40% desktop" />
+              </Field>
+              <Field label="Top traffic sources">
+                <Input value={topTrafficSources} onChange={(e) => setTopTrafficSources(e.target.value)} placeholder="e.g. Google Ads 40%, Organic 35%, Social 25%" />
+              </Field>
+              <Field label="Competitor URLs">
+                <Input value={competitorUrls} onChange={(e) => setCompetitorUrls(e.target.value)} placeholder="e.g. competitor1.com, competitor2.com" />
+              </Field>
+              <div className="md:col-span-2">
+                <Field label="Additional context">
+                  <textarea
+                    value={additionalContext}
+                    onChange={(e) => setAdditionalContext(e.target.value)}
+                    placeholder="Any other context Claude should know — recent changes, known issues, business constraints..."
+                    rows={3}
+                    className="vt-input resize-none w-full"
+                    maxLength={1000}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-[color:var(--muted)] flex-1 min-w-[180px]">Calls the Claude API with prior-audit context. Costs tokens against your monthly budget.</p>
           <Button
@@ -219,6 +282,7 @@ function RunAuditPage() {
             </Link>
           </div>
           <AuditResults parsed={parsed} />
+          <AuditChat auditId={auditId} clientName={client?.name ?? "client"} />
           {client && (
             <PostAuditCTARow
               auditId={auditId}

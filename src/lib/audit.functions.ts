@@ -14,6 +14,14 @@ const RunInput = z.object({
   trafficVolume: z.number().int().nonnegative(),
   aov: z.number().nonnegative(),
   industry: z.string().min(1).max(60),
+  // Enhanced context fields
+  pageGoal: z.string().max(200).optional(),
+  targetAudience: z.string().max(200).optional(),
+  primaryCta: z.string().max(200).optional(),
+  deviceSplit: z.string().max(100).optional(),
+  topTrafficSources: z.string().max(200).optional(),
+  competitorUrls: z.string().max(500).optional(),
+  additionalContext: z.string().max(1000).optional(),
 });
 
 const ANTHROPIC_MODEL = "claude-sonnet-4-6";
@@ -289,6 +297,13 @@ export const runAudit = createServerFn({ method: "POST" })
           industry: data.industry,
           trafficVolume: data.trafficVolume,
           aov: data.aov,
+          pageGoal: data.pageGoal,
+          targetAudience: data.targetAudience,
+          primaryCta: data.primaryCta,
+          deviceSplit: data.deviceSplit,
+          topTrafficSources: data.topTrafficSources,
+          competitorUrls: data.competitorUrls,
+          additionalContext: data.additionalContext,
         },
         prior?.output ?? null,
         analytics,
