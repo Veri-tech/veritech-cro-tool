@@ -96,6 +96,22 @@ export const listAgencyIntegrations = createServerFn({ method: "GET" })
 
     const rows = (clients ?? []).map((c) => {
       const m = byClient.get(c.id) ?? {};
+
+      // Inject agency-level keys as virtual "active" provider rows
+      const agencyProviders = ["dataforseo", "semrush"] as const;
+      for (const p of agencyProviders) {
+        if (agencyApiKeys[p] && !m[p]) {
+          m[p] = {
+            has_credentials: true,
+            status: "active",
+            account_email: "Agency key",
+            last_synced_at: null,
+            last_error: null,
+            auth_method: "agency",
+          };
+        }
+      }
+
       const connectedCount = DATA_PROVIDERS.filter(
         (p) => m[p]?.has_credentials && m[p]?.status === "active",
       ).length;
